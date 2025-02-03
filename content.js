@@ -37,6 +37,14 @@ let state = {
 
 let isProcessing = false;
 
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (changes.state && changes.state.newValue) {
+    state = changes.state.newValue;
+    console.log("State updated from Chrome storage:", state);
+    updateUI(); // Update the UI to reflect the new state
+  }
+});
+
 
 chrome.storage.sync.get("state", (data) => {
   if (data.state) {
@@ -51,6 +59,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+document.addEventListener("paste", (event) => {
+  const clipboardData = event.clipboardData || window.clipboardData;
+  const pastedText = clipboardData.getData("text");
+
+  // Check if the pasted text contains placeholders
+  chrome.storage.sync.get("state", (data) => {
+    if (data.state && data.state.replacements) {
+      const revertedText = revertPlaceholders(pastedText, data.state.replacements);
+
+      if (revertedText !== pastedText) {
+        // Replace the pasted text with the reverted text
+        event.preventDefault();
+        const selection = window.getSelection();
+        if (selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+          range.deleteContents();
+          range.insertNode(document.createTextNode(revertedText));
+        }
+      }
+    }
+  });
+});
 
 const patterns = {
 
@@ -99,6 +129,15 @@ function findPatterns(text) {
   }
 
   return results;
+}
+
+function loadState() {
+  chrome.storage.sync.get("state", (data) => {
+    if (data.state) {
+      state = data.state;
+      console.log("State loaded from Chrome storage:", state);
+    }
+  });
 }
 
 function createUI() {
@@ -154,10 +193,12 @@ function createUI() {
   `;
 
   clearButton.addEventListener("click", () => {
-    revertMaskedText(); 
+    revertMaskedText(); // Revert masked text to original
     state.replacements = {};
     state.counter = 0;
-    chrome.storage.sync.set({ state });
+    chrome.storage.sync.set({ state }, () => {
+      console.log("State cleared and saved to Chrome storage.");
+    });
     updateUI();
     chrome.runtime.sendMessage({ action: "stateUpdated", state });
   });
@@ -205,6 +246,39 @@ function createUI() {
   return container;
 }
 
+function revertAllPlaceholders() {
+  const inputs = document.querySelectorAll(
+    'input:not([type="password"]), textarea, [contenteditable="true"]'
+  );
+
+  inputs.forEach((input) => {
+    const isContentEditable = input.isContentEditable;
+    let text = isContentEditable ? input.innerText : input.value;
+
+    const revertedText = revertPlaceholders(text, state.replacements);
+
+    if (revertedText !== text) {
+      if (isContentEditable) {
+        input.innerText = revertedText;
+
+        const range = document.createRange();
+        const selection = window.getSelection();
+        range.selectNodeContents(input);
+        range.collapse(false); 
+        selection.removeAllRanges();
+        selection.addRange(range);
+      } else {
+        input.value = revertedText;
+      }
+    }
+  });
+
+  state.replacements = {};
+  state.counter = 0;
+  saveState(); 
+  updateUI();
+}
+
 function maskSensitiveInfo(match, type) {
   if (!state.enabled) return match;
 
@@ -213,14 +287,26 @@ function maskSensitiveInfo(match, type) {
   } else {
     if (!state.replacements[match]) {
       state.counter++;
-      const replacement = `${type}-${String(state.counter).padStart(3, "0")}`;
-      state.replacements[match] = replacement;
-      chrome.storage.sync.set({ state });
+      const placeholder = `${type}-${String(state.counter).padStart(3, "0")}`;
+      state.replacements[match] = placeholder;
+      chrome.storage.sync.set({ state }, () => {
+        console.log("State saved to Chrome storage.");
+      });
     }
     return state.replacements[match];
   }
 }
 
+function revertPlaceholders(text, replacements) {
+  let revertedText = text;
+
+  Object.entries(replacements).forEach(([original, placeholder]) => {
+    const regex = new RegExp(placeholder, "g");
+    revertedText = revertedText.replace(regex, original);
+  });
+
+  return revertedText;
+}
 function revertMaskedText() {
   const inputs = document.querySelectorAll(
     'input:not([type="password"]), textarea, [contenteditable="true"]'
@@ -230,21 +316,21 @@ function revertMaskedText() {
     const isContentEditable = input.isContentEditable;
     let text = isContentEditable ? input.innerText : input.value;
 
-    Object.entries(state.replacements).forEach(([original, replacement]) => {
-      text = text.replace(replacement, original);
-    });
+    const revertedText = revertPlaceholders(text, state.replacements);
 
-    if (isContentEditable) {
-      input.innerText = text;
+    if (revertedText !== text) {
+      if (isContentEditable) {
+        input.innerText = revertedText;
 
-      const range = document.createRange();
-      const selection = window.getSelection();
-      range.selectNodeContents(input);
-      range.collapse(false); 
-      selection.removeAllRanges();
-      selection.addRange(range);
-    } else {
-      input.value = text;
+        const range = document.createRange();
+        const selection = window.getSelection();
+        range.selectNodeContents(input);
+        range.collapse(false); 
+        selection.removeAllRanges();
+        selection.addRange(range);
+      } else {
+        input.value = revertedText;
+      }
     }
   });
 }
@@ -262,18 +348,18 @@ function updateUI() {
   }
 
   const groupedReplacements = {};
-  Object.entries(state.replacements).forEach(([orig, rep]) => {
-    const type = rep.split("-")[0];
+  Object.entries(state.replacements).forEach(([orig, placeholder]) => {
+    const type = placeholder.split("-")[0];
     if (!groupedReplacements[type]) {
       groupedReplacements[type] = [];
     }
-    groupedReplacements[type].push({ original: orig, replacement: rep });
+    groupedReplacements[type].push({ original: orig, placeholder });
   });
 
   Object.values(groupedReplacements).forEach((group) => {
     group.sort((a, b) => {
-      const numA = parseInt(a.replacement.split("-")[1]);
-      const numB = parseInt(b.replacement.split("-")[1]);
+      const numA = parseInt(a.placeholder.split("-")[1]);
+      const numB = parseInt(b.placeholder.split("-")[1]);
       return numA - numB;
     });
   });
@@ -291,9 +377,9 @@ function updateUI() {
           <ul style="list-style: none; padding: 0; margin: 0;">
             ${items
               .map(
-                ({ original, replacement }) => `
+                ({ original, placeholder }) => `
               <li style="margin-bottom: 5px; padding: 5px; background: #f5f5f5; border-radius: 4px;">
-                <span style="color: black;">${replacement}</span> 
+                <span style="color: black;">${placeholder}</span> 
                 <span style="color: black;">→</span> 
                 <span style="color: rgb(251, 101, 101);">${
                   state.settings.maskStyle === "asterisk"
@@ -385,13 +471,34 @@ function addInputListeners() {
       });
 
       input.addEventListener("paste", (e) => {
-        setTimeout(() => debouncedDetectAndReplace(e.target), 0);
+        setTimeout(() => {
+          const isContentEditable = e.target.isContentEditable;
+          let text = isContentEditable ? e.target.innerText : e.target.value;
+
+          const revertedText = revertPlaceholders(text);
+
+          if (revertedText !== text) {
+            if (isContentEditable) {
+              e.target.innerText = revertedText;
+
+              const range = document.createRange();
+              const selection = window.getSelection();
+              range.selectNodeContents(e.target);
+              range.collapse(false); 
+              selection.removeAllRanges();
+              selection.addRange(range);
+            } else {
+              e.target.value = revertedText;
+            }
+          }
+        }, 0);
       });
     }
   });
 }
 
 function initProtector() {
+  loadState();
   createUI();
   addInputListeners();
 
@@ -407,6 +514,20 @@ function initProtector() {
     childList: true,
     subtree: true,
   });
+
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (changes.state && changes.state.newValue) {
+      state = changes.state.newValue;
+      console.log("State updated from Chrome storage:", state);
+      updateUI(); 
+    }
+  });
+  function saveState() {
+    chrome.storage.sync.set({ state }, () => {
+      console.log("State saved to Chrome storage.");
+    });
+  }
+
 }
 
 if (document.readyState === "loading") {
