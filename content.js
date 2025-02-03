@@ -30,7 +30,6 @@ let state = {
       Hostname: true,
       Gpa: true,
       Transcript: true,
-      Location: true,
       BankAccountNumber: true,
     },
   },
@@ -81,7 +80,6 @@ const patterns = {
   Gpa: /\bGPA:\s*[0-4]\.\d{1,2}\b/gi,
   Hostname: /\b[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+\b/g,
   Transcript: /\bTranscript\s*ID:\s*\d{6,9}\b/gi,
-  Location: /\b\d{1,3}\.\d{1,6}°\s[NSEW],\s\d{1,3}\.\d{1,6}°\s[NSEW]\b/g,
   BankAccountNumber: /\b\d{8,17}\b/g,
   Pin: /\b\d{4,6}\b/g,
 };

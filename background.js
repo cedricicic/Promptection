@@ -31,7 +31,6 @@ chrome.runtime.onInstalled.addListener(() => {
           Hostname: true,
           Gpa: true,
           Transcript: true,
-          Location: true,
           BankAccountNumber: true,
         },
       },
