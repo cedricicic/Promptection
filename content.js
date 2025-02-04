@@ -41,7 +41,7 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
   if (changes.state && changes.state.newValue) {
     state = changes.state.newValue;
     console.log("State updated from Chrome storage:", state);
-    updateUI(); // Update the UI to reflect the new state
+    updateUI(); 
   }
 });
 
@@ -63,13 +63,11 @@ document.addEventListener("paste", (event) => {
   const clipboardData = event.clipboardData || window.clipboardData;
   const pastedText = clipboardData.getData("text");
 
-  // Check if the pasted text contains placeholders
   chrome.storage.sync.get("state", (data) => {
     if (data.state && data.state.replacements) {
       const revertedText = revertPlaceholders(pastedText, data.state.replacements);
 
       if (revertedText !== pastedText) {
-        // Replace the pasted text with the reverted text
         event.preventDefault();
         const selection = window.getSelection();
         if (selection.rangeCount > 0) {
@@ -87,7 +85,7 @@ const patterns = {
   Email: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
   Password: /(?<=password\s*[:=]\s*)\S+/gi,
   CreditCard: /\b(?:\d{4}[- ]?){3}\d{4}\b/g,
-  Phone: /\b(\+\d{1,2}\s?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g,
+  Phone: /(?:\b(?:\+\d{1,2}\s?)?[\(]?\d{3}[\)]?[\s.-]?\d{3}[\s.-]?\d{4}\b)|(?:\+\d{1,3}[\s.-]?\d{1,4}[\s.-]?\d{2,4}[\s.-]?\d{2,4}(?:\s?(?:x|ext|#)\s?\d{1,5})?)\b/g,
   Ssn: /\b\d{3}[-]?\d{2}[-]?\d{4}\b/g,
 
   Address: /\b\d+\s+([a-zA-Z]+\s*)+,\s*[a-zA-Z]+,\s*[A-Z]{2}\s*\d{5}\b/g,
@@ -108,7 +106,7 @@ const patterns = {
   CaseNumber: /\bCase\s*No:\s*\d{4,6}\b/gi,
   ApiKey: /\b[A-Za-z0-9]{20,40}\b/g,
   Gpa: /\bGPA:\s*[0-4]\.\d{1,2}\b/gi,
-  Hostname: /\b[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+\b/g,
+  Hostname:  /(?<![a-zA-Z])(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+(?:com|net|org|edu|gov|mil|io|co|us|uk|ca|au|de|fr|jp|in|cn|br|ru|biz|info|tv|me|cc|xyz|tech|online|store|site|app|ai|dev)(?![a-zA-Z])/g,
   Transcript: /\bTranscript\s*ID:\s*\d{6,9}\b/gi,
   BankAccountNumber: /\b\d{8,17}\b/g,
   Pin: /\b\d{4,6}\b/g,
@@ -122,7 +120,6 @@ function findPatterns(text) {
       const matches = text.match(regex);
       if (matches) {
         results[key] = matches;
-       
         text = text.replace(regex, "");
       }
     }
@@ -193,7 +190,7 @@ function createUI() {
   `;
 
   clearButton.addEventListener("click", () => {
-    revertMaskedText(); // Revert masked text to original
+    revertMaskedText(); 
     state.replacements = {};
     state.counter = 0;
     chrome.storage.sync.set({ state }, () => {
